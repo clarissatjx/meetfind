@@ -17,7 +17,7 @@ Next.js 15 App Router + TypeScript, Postgres via `pg` (`DATABASE_URL`), deployed
 ## Calendar sources
 - **Google**: OAuth, scope `calendar.freebusy` only; tokens not stored. Redirect `$BASE_URL/api/auth/google/callback`. UNTESTED (needs real creds).
 - **Apple**: iCloud CalDAV with a user-generated app-specific password, used once, never stored. Auth-failure path tested; successful sync UNTESTED. Fallback: public webcal:// link or .ics upload.
-- **TimeTree**: no official API; its sync is one-way INTO TimeTree. UI shows a command that runs the unofficial `timetree-exporter` (MIT, github.com/eoleedi/TimeTree-Exporter) on the user's machine and curl-uploads the .ics, so the password never reaches the server.
+- **TimeTree**: no official API; its sync is one-way INTO TimeTree. `lib/timetree.ts` logs in to the private web API (email+password accounts only; password used once, never stored; UNTESTED against a real account) and converts events to ICS. The UI also offers a local command that runs the unofficial `timetree-exporter` (MIT, github.com/eoleedi/TimeTree-Exporter) on the user's machine and curl-uploads the .ics, so the password never reaches the server.
 - **Manual paint**: busy slots stored as source `manual`.
 
 ## Next steps
