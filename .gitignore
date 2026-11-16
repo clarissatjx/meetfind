@@ -1,5 +1,7 @@
-__pycache__/
-*.pyc
-*.db
+node_modules/
+.next/
 .env
-.venv/
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+.vercel

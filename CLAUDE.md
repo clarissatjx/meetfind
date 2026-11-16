@@ -3,25 +3,28 @@
 Group scheduling: create group (date range + daily hours) → members join → each adds a calendar → app shows windows where everyone is free and a heatmap.
 
 ## Stack
-FastAPI + SQLite (stdlib) in `app.py`; single-page vanilla JS front end in `static/index.html`.
-Run: `pip install -r requirements.txt && uvicorn app:app --reload` (env: `DB_PATH`, `BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
+Next.js 15 App Router + TypeScript, Postgres via `pg` (`DATABASE_URL`), deployed on Vercel. No ORM; schema is created on first request in `lib/db.ts`.
+- `app/api/**/route.ts` — route handlers (Next 15: `params` is a Promise)
+- `lib/ics.ts` — .ics → busy intervals (ical.js; handles TZID w/o VTIMEZONE, RRULE/EXDATE/exceptions; skips all-day, TRANSPARENT, CANCELLED). Tested in `tests/ics.test.ts`.
+- `lib/availability.ts` — pure slot grid + "everyone free" windows, computed in the group's time zone (luxon)
+- `lib/groups.ts` — group/member helpers, `storeBusy` (replaces one source's rows in a transaction)
+- `lib/caldav.ts` (tsdav, iCloud), `lib/safeFetch.ts` (SSRF-guarded URL fetch)
+- `components/*` — client UI (GroupView, Sources tabs, Paint grid, Results heatmap)
 
 ## Data model
-`groups`, `members` (id + secret token returned on join, kept in browser localStorage), `busy` (member_id, source, start, end — UTC ISO).
-Only busy intervals are stored, never event titles. Each source writes a marker row `_<source>` so a member with an empty calendar still counts as "connected". Re-importing a source replaces its rows. Availability is computed server-side in the group's time zone (`/api/groups/{id}/availability`).
+`groups`, `members` (secret token returned on join, stored hashed, kept in browser localStorage), `member_sources` (which sources a member connected; an empty calendar still counts as connected), `busy` (member_id, source, start_ts, end_ts), `oauth_states` (nonce for Google OAuth). Only busy intervals are stored, never event titles.
 
 ## Calendar sources
-- **Google**: OAuth, scope `calendar.freebusy` only; tokens not stored. Needs OAuth web client, redirect `$BASE_URL/auth/google/callback`. UNTESTED (needs real creds).
-- **Apple**: iCloud CalDAV (`caldav` lib) with a user-generated app-specific password, used once, never stored. Auth-failure path tested; a successful sync is UNTESTED. Fallback: public webcal:// link or .ics upload.
-- **TimeTree**: no official API and its sync is one-way INTO TimeTree. UI shows a command running the unofficial `timetree-exporter` (MIT, https://github.com/eoleedi/TimeTree-Exporter) on the user's own machine and curl-uploading the .ics, so the TimeTree password never reaches the server.
-- **Manual paint**: user paints busy slots; stored as source `manual`.
-- **.ics** import skips all-day, TRANSPARENT and cancelled events; recurrences expanded via recurring_ical_events. URL fetch blocks non-global IPs (SSRF guard).
+- **Google**: OAuth, scope `calendar.freebusy` only; tokens not stored. Redirect `$BASE_URL/api/auth/google/callback`. UNTESTED (needs real creds).
+- **Apple**: iCloud CalDAV with a user-generated app-specific password, used once, never stored. Auth-failure path tested; successful sync UNTESTED. Fallback: public webcal:// link or .ics upload.
+- **TimeTree**: no official API; its sync is one-way INTO TimeTree. UI shows a command that runs the unofficial `timetree-exporter` (MIT, github.com/eoleedi/TimeTree-Exporter) on the user's machine and curl-uploads the .ics, so the password never reaches the server.
+- **Manual paint**: busy slots stored as source `manual`.
 
 ## Next steps
-1. Dockerfile + Render/Fly config for a public deploy; test Google and Apple end to end.
+1. Deploy to Vercel + Neon; test Google and Apple end to end.
 2. "Best partial overlap" ranking when nobody-all-free windows don't exist.
-3. Optional interactive artifact demo (no Google/CalDAV).
-4. Tests (pytest) for parse_ics, availability, manual paint.
+3. Rate limiting on join/import endpoints; group expiry/cleanup.
+4. Windows TZIDs (e.g. "Singapore Standard Time") without a VTIMEZONE fall back to the group's time zone.
 
 ## Preferences
 Owner (Clarissa) prefers terse answers and complete working code over walkthroughs.
