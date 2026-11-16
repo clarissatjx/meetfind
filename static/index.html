@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>meetfind</title>
+<style>
+:root{--bg:#fafaf7;--fg:#1c1c1a;--mut:#77756f;--line:#e4e2db;--acc:#2f6f4f;--card:#fff}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+main{max-width:980px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 3px}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;width:100%;background:#fff}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+button,.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
+button.ghost,.btn.ghost{background:#fff;color:var(--acc)}button:disabled{opacity:.5}
+.mut{color:var(--mut);font-size:13px}.err{color:#b3261e}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{border:1px solid var(--line);border-radius:99px;padding:2px 10px;font-size:13px;cursor:pointer;user-select:none}
+.chip.off{opacity:.4;text-decoration:line-through}.chip.pending{border-style:dashed;color:var(--mut)}
+.grid{display:grid;gap:2px;overflow-x:auto}
+.cell{height:22px;border-radius:3px;background:#eee}.hd{font-size:12px;text-align:center;color:var(--mut);padding-bottom:2px}
+.tl{font-size:11px;color:var(--mut);text-align:right;padding-right:4px;line-height:22px}
+.cell:hover{outline:2px solid var(--fg)}
+.win{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)}
+#tip{position:fixed;background:#222;color:#fff;font-size:12px;padding:6px 8px;border-radius:6px;pointer-events:none;display:none;max-width:240px;z-index:9}
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+</style></head><body><main id="app"></main><div id="tip"></div>
+<script>
+const $=(s,e=document)=>e.querySelector(s), app=$('#app');
+const api=async(p,o={})=>{const r=await fetch(p,o);if(!r.ok){let m=r.statusText;try{m=(await r.json()).detail||m}catch{}throw new Error(m)}return r.json()};
+const J=b=>({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gid=(location.pathname.match(/^\/g\/([\w-]+)/)||[])[1];
+
+/* ---------- create ---------- */
+function home(){
+  const t=new Date(), iso=d=>d.toISOString().slice(0,10), w=new Date(t.getTime()+14*864e5);
+  app.innerHTML=`<h1>meetfind</h1><div class="mut">Find a time everyone's actually free — from real calendars.</div>
+  <div class="card"><h2>Create group</h2>
+  <label>Group name</label><input id="n" placeholder="Dinner with the gang">
+  <div class="row"><div><label>From</label><input id="s" type="date" value="${iso(t)}"></div><div><label>To</label><input id="e" type="date" value="${iso(w)}"></div></div>
+  <div class="row"><div><label>Day starts</label><input id="ds" type="time" value="09:00"></div><div><label>Day ends</label><input id="de" type="time" value="22:00"></div>
+  <div><label>Slot</label><select id="sm"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">60 min</option></select></div></div>
+  <label>Time zone</label><input id="tz" value="${Intl.DateTimeFormat().resolvedOptions().timeZone}">
+  <p><button id="go">Create group</button> <span id="er" class="err"></span></p></div>`;
+  $('#go').onclick=async()=>{try{
+    const r=await api('/api/groups',J({name:$('#n').value,start:$('#s').value,end:$('#e').value,day_start:$('#ds').value,day_end:$('#de').value,slot_min:+$('#sm').value,tz:$('#tz').value}));
+    location.href='/g/'+r.id}catch(e){$('#er').textContent=e.message}};
+}
+
+/* ---------- group ---------- */
+let me=null, excluded=new Set(), minMin=60, cfg={};
+const load=()=>{try{return JSON.parse(localStorage.getItem('mf_'+gid))}catch{return null}};
+
+async function group(){
+  me=load(); cfg=await api('/api/config');
+  const params=new URLSearchParams(location.search);
+  let g; try{g=await api('/api/groups/'+gid)}catch{app.innerHTML='<p>Group not found.</p>';return}
+  app.innerHTML=`<h1>${esc(g.name)}</h1><div class="mut">${g.start} → ${g.end} · ${g.day_start}–${g.day_end} · ${esc(g.tz)} · share this page's URL to invite people</div>
+  <div id="join"></div><div id="res"></div>`;
+  if(params.get('err'))$('#join').insertAdjacentHTML('afterbegin','<p class="err">Google sign-in was cancelled.</p>');
+  renderJoin(); refresh();
+}
+
+function renderJoin(){
+  const el=$('#join');
+  if(!me){
+    el.innerHTML=`<div class="card"><h2>Join group</h2><div class="row"><input id="nm" placeholder="Your name"><button id="jb" style="flex:0">Join</button></div></div>`;
+    $('#jb').onclick=async()=>{const n=$('#nm').value.trim();if(!n)return;
+      me=await api(`/api/groups/${gid}/join`,J({name:n}));localStorage.setItem('mf_'+gid,JSON.stringify(me));renderJoin();refresh()};
+    return;
+  }
+  const gl=cfg.google?`<a class="btn" href="/auth/google/start?gid=${gid}&mid=${me.member_id}&token=${me.token}">Google Calendar</a>`
+    :`<button disabled title="Set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET">Google Calendar (not configured)</button>`;
+  el.innerHTML=`<div class="card"><h2>Add your calendar</h2>
+  <div class="row" style="align-items:center"><div style="flex:0 0 auto">${gl}</div>
+  <div class="mut">Only busy/free blocks are read — event titles are never stored.</div></div>
+  <div class="tabs" style="margin-top:12px"><button class="ghost" data-s="apple">Apple Calendar</button><button class="ghost" data-s="timetree">TimeTree</button><button class="ghost" data-s="paint">Paint busy times</button><button class="ghost" data-s="ics">Other .ics</button></div>
+  <div id="ics"></div><span id="er" class="err"></span></div>`;
+  el.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{$('#er').textContent='';({apple,timetree,paint,ics:()=>icsForm('ics')})[b.dataset.s]()});
+}
+
+const done=async(p,msg='✓ Imported.')=>{$('#er').textContent='';try{await p;$('#ics').innerHTML=`<p>${msg}</p>`;refresh()}catch(e){$('#er').textContent=e.message}};
+const fileBox=src=>`<div class="mut" style="margin:6px 0">or upload a .ics file</div><input id="f" type="file" accept=".ics,text/calendar">`;
+const bindFile=src=>{$('#f').onchange=e=>{const fd=new FormData();fd.append('token',me.token);fd.append('source',src);fd.append('file',e.target.files[0]);
+  done(api(`/api/groups/${gid}/members/${me.member_id}/ics`,{method:'POST',body:fd}))}};
+const bindUrl=src=>{$('#ub').onclick=()=>done(api(`/api/groups/${gid}/members/${me.member_id}/ics-url`,J({token:me.token,url:$('#u').value,source:src})))};
+
+function apple(){
+  $('#ics').innerHTML=`<p class="mut"><b>Live sync (recommended).</b> Apple has no sign-in for calendars, so create an
+  <a href="https://account.apple.com" target="_blank">app-specific password</a> (Sign-In and Security → App-Specific Passwords). It's used once to read busy times and never stored.</p>
+  <div class="row"><input id="ae" placeholder="Apple Account email" autocomplete="off"><input id="ap" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="off">
+  <button id="ab" style="flex:0">Connect</button></div>
+  <p class="mut" style="margin-top:14px"><b>Or</b> use a public calendar link (Calendar → share → Public Calendar → copy webcal:// link):</p>
+  <div class="row"><input id="u" placeholder="webcal:// link"><button id="ub" class="ghost" style="flex:0">Import</button></div>${fileBox('apple')}`;
+  $('#ab').onclick=()=>{$('#ab').disabled=true;done(api(`/api/groups/${gid}/members/${me.member_id}/caldav`,J({token:me.token,email:$('#ae').value,app_password:$('#ap').value})),'✓ Connected.').finally(()=>{const b=$('#ab');if(b)b.disabled=false})};
+  bindUrl('apple');bindFile('apple');
+}
+
+function timetree(){
+  const url=`${location.origin}/api/groups/${gid}/members/${me.member_id}/ics`;
+  const cmd=`uvx timetree-exporter -o tt.ics && curl -sS -F token=${me.token} -F source=timetree -F file=@tt.ics ${url}`;
+  $('#ics').innerHTML=`<p class="mut">TimeTree has no official export, and its sync only goes <i>into</i> TimeTree. Run this on your own computer
+  (needs <a href="https://docs.astral.sh/uv/" target="_blank">uv</a>; it asks for your TimeTree login locally — it never reaches this server). Re-run to refresh.
+  Uses the unofficial <a href="https://github.com/eoleedi/TimeTree-Exporter" target="_blank">TimeTree-Exporter</a>, which may break if TimeTree changes.</p>
+  <pre id="cmd" style="white-space:pre-wrap;word-break:break-all;background:#f3f2ec;padding:10px;border-radius:6px;font-size:12px">${esc(cmd)}</pre>
+  <button class="ghost" id="cp">Copy command</button> <span class="mut">or upload a file you exported yourself:</span><br><br><input id="f" type="file" accept=".ics,text/calendar">`;
+  $('#cp').onclick=()=>{navigator.clipboard.writeText(cmd);$('#cp').textContent='Copied'};
+  bindFile('timetree');
+}
+
+function icsForm(src){
+  $('#ics').innerHTML=`<p class="mut">Any iCalendar link or file (Outlook, Fastmail, Proton, …).</p><div class="row"><input id="u" placeholder="webcal:// or https:// link">
+  <button id="ub" style="flex:0">Import</button></div>${fileBox(src)}`;
+  bindUrl(src);bindFile(src);
+}
+
+async function paint(){
+  const [g,m]=await Promise.all([api('/api/groups/'+gid),api(`/api/groups/${gid}/members/${me.member_id}/manual?token=${me.token}`)]);
+  const sel=new Set(m.slots), tm=s=>{const[h,mi]=s.split(':').map(Number),t=h*60+mi;return t},
+    fmt=t=>String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+  const days=[];for(let d=new Date(g.start+'T00:00');d<=new Date(g.end+'T00:00');d.setDate(d.getDate()+1))days.push(d.toLocaleDateString('en-CA')+'|'+d.toLocaleDateString('en',{weekday:'short'}));
+  const rows=[];for(let t=tm(g.day_start);t+g.slot_min<=tm(g.day_end);t+=g.slot_min)rows.push(fmt(t));
+  $('#ics').innerHTML=`<p class="mut">Click or drag to mark when you're <b>busy</b>. Adds to any imported calendar.</p>
+  <div class="grid" id="pg" style="grid-template-columns:44px repeat(${days.length},minmax(34px,1fr));user-select:none"><div></div>`+
+  days.map(x=>{const[d,w]=x.split('|');return `<div class="hd">${w}<br>${d.slice(5)}</div>`}).join('')+
+  rows.map(r=>`<div class="tl">${r.endsWith(':00')?r:''}</div>`+days.map(x=>{const k=x.split('|')[0]+' '+r;return `<div class="cell p" data-k="${k}" style="background:${sel.has(k)?'#b3261e':'#eee'}"></div>`}).join('')).join('')+
+  `</div><p><button id="sv">Save</button> <button class="ghost" id="cl">Clear all</button></p>`;
+  let mode=null;const set=(c)=>{const k=c.dataset.k;mode?sel.add(k):sel.delete(k);c.style.background=mode?'#b3261e':'#eee'};
+  document.querySelectorAll('.p').forEach(c=>{
+    c.onmousedown=e=>{e.preventDefault();mode=!sel.has(c.dataset.k);set(c)};
+    c.onmouseenter=()=>{if(mode!==null)set(c)}});
+  addEventListener('mouseup',()=>mode=null);
+  $('#cl').onclick=()=>{sel.clear();document.querySelectorAll('.p').forEach(c=>c.style.background='#eee')};
+  $('#sv').onclick=()=>done(api(`/api/groups/${gid}/members/${me.member_id}/manual`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:me.token,slots:[...sel]})}),'✓ Saved.');
+}
+
+async function refresh(){
+  const q=`min_minutes=${minMin}&exclude=${[...excluded].join(',')}`;
+  const d=await api(`/api/groups/${gid}/availability?${q}`);
+  const name=Object.fromEntries(d.members.map(m=>[m.id,m.name]));
+  const mc=d.members.map(m=>`<span class="chip ${m.connected?'':'pending'} ${excluded.has(m.id)?'off':''}" data-id="${m.id}" title="${m.connected?'click to include/exclude':'no calendar yet'}">${esc(m.name)}${m.id===me?.member_id?' (you)':''}${m.connected?'':' · waiting'}</span>`).join('');
+  const hrs=d.days[0]?.slots.map(s=>s.t)||[];
+  const cols=d.days.length;
+  const grid=`<div class="grid" style="grid-template-columns:44px repeat(${cols},minmax(34px,1fr))"><div></div>`+
+    d.days.map(x=>`<div class="hd">${x.dow}<br>${x.date.slice(5)}</div>`).join('')+
+    hrs.map((t,i)=>`<div class="tl">${t.endsWith(':00')?t:''}</div>`+d.days.map(x=>{
+      const s=x.slots[i],n=s.free.length,tot=d.active,a=tot?n/tot:0;
+      const bg=tot?`rgba(47,111,79,${(0.08+0.92*a**1.5).toFixed(2)})`:'#eee';
+      const free=s.free.map(id=>name[id]).join(', ')||'—';
+      const busy=d.members.filter(m=>m.connected&&!excluded.has(m.id)&&!s.free.includes(m.id)).map(m=>m.name).join(', ')||'—';
+      return `<div class="cell" style="background:${bg}" data-tip="${esc(x.dow+' '+x.date.slice(5)+' '+s.t+'\nFree ('+n+'/'+tot+'): '+free+'\nBusy: '+busy)}"></div>`}).join('')).join('')+`</div>`;
+  const wins=d.windows.length?d.windows.map(w=>`<div class="win"><span>${w.dow} ${w.date} · <b>${w.start}–${w.end}</b></span><span class="mut">${w.minutes} min</span></div>`).join('')
+    :`<p class="mut">${d.active?'No window where everyone is free for that long. Try a shorter duration or exclude someone.':'Waiting for calendars…'}</p>`;
+  $('#res').innerHTML=`<div class="card"><h2>Members</h2><div class="chips">${mc}</div></div>
+  <div class="card"><div class="row" style="align-items:end"><h2 style="flex:2;margin:0">Everyone free</h2>
+  <div><label>Min duration</label><select id="md">${[30,60,90,120,180,240].map(m=>`<option value="${m}" ${m==minMin?'selected':''}>${m} min</option>`).join('')}</select></div></div>${wins}</div>
+  <div class="card"><h2>Heatmap <span class="mut">(darker = more people free)</span></h2>${grid}</div>`;
+  $('#md').onchange=e=>{minMin=+e.target.value;refresh()};
+  document.querySelectorAll('.chip[data-id]').forEach(c=>c.onclick=()=>{const i=c.dataset.id;excluded.has(i)?excluded.delete(i):excluded.add(i);refresh()});
+  const tip=$('#tip');
+  document.querySelectorAll('.cell').forEach(c=>{
+    c.onmousemove=e=>{tip.style.display='block';tip.style.whiteSpace='pre-line';tip.textContent=c.dataset.tip;tip.style.left=Math.min(e.clientX+12,innerWidth-250)+'px';tip.style.top=e.clientY+12+'px'};
+    c.onmouseleave=()=>tip.style.display='none'});
+}
+gid?group():home();
+</script></body></html>
