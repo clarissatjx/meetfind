@@ -45,7 +45,7 @@ export default function Sources({ gid, me, google, onDone }: { gid: string; me: 
         ))}
       </div>
       {tab === "apple" && <Apple base={base} token={me.token} run={run} uploadFile={uploadFile} />}
-      {tab === "timetree" && <TimeTree base={base} token={me.token} uploadFile={uploadFile} />}
+      {tab === "timetree" && <TimeTree base={base} token={me.token} run={run} uploadFile={uploadFile} />}
       {tab === "paint" && <Paint gid={gid} me={me} run={run} />}
       {tab === "ics" && <UrlOrFile base={base} token={me.token} source="ics" run={run} uploadFile={uploadFile} />}
       {msg && <p>{msg}</p>}
@@ -100,22 +100,39 @@ function Apple({ base, token, run, uploadFile }: { base: string; token: string; 
   );
 }
 
-function TimeTree({ base, token, uploadFile }: { base: string; token: string; uploadFile: Upload }) {
+function TimeTree({ base, token, run, uploadFile }: { base: string; token: string; run: RunFn; uploadFile: Upload }) {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const cmd = `uvx timetree-exporter -o tt.ics && curl -sS -F token=${token} -F source=timetree -F file=@tt.ics ${location.origin}${base}/ics`;
   return (
     <>
       <p className="mut">
-        TimeTree has no official export, and its sync only goes <i>into</i> TimeTree. Run this on your own computer (needs{" "}
-        <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a>; it asks for your TimeTree login locally — it never reaches this server).
-        Re-run to refresh. Uses the unofficial{" "}
-        <a href="https://github.com/eoleedi/TimeTree-Exporter" target="_blank" rel="noreferrer">TimeTree-Exporter</a>, which may break if TimeTree changes.
+        TimeTree has no official API, so this signs in to TimeTree's private web endpoints once, reads your event times, and discards the login.
+        Your password is not stored or logged. It only works for <b>email + password</b> accounts (not Google/Apple/LINE sign-in), may break if TimeTree changes,
+        and reads all calendars you're in (skipping all-day events, birthdays and memos).
       </p>
-      <pre className="cmd">{cmd}</pre>
-      <button className="ghost" onClick={() => { navigator.clipboard.writeText(cmd); setCopied(true); }}>{copied ? "Copied" : "Copy command"}</button>{" "}
-      <span className="mut">or upload a file you exported yourself:</span>
-      <br /><br />
-      <input type="file" accept=".ics,text/calendar" onChange={uploadFile("timetree")} />
+      <div className="row">
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="TimeTree email" autoComplete="off" />
+        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="TimeTree password" autoComplete="off" />
+        <button className="fit" disabled={busy} onClick={async () => {
+          setBusy(true);
+          await run(api(`${base}/timetree`, post({ token, email, password: pw })), "✓ Connected.");
+          setBusy(false);
+        }}>Connect</button>
+      </div>
+      <details style={{ marginTop: 14 }}>
+        <summary className="mut" style={{ cursor: "pointer" }}>Prefer not to share your password? Export on your own computer instead</summary>
+        <p className="mut">
+          Run this locally (needs <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a>). It asks for your TimeTree login on your machine; nothing reaches this server except the calendar file. Uses{" "}
+          <a href="https://github.com/eoleedi/TimeTree-Exporter" target="_blank" rel="noreferrer">TimeTree-Exporter</a>.
+        </p>
+        <pre className="cmd">{cmd}</pre>
+        <button className="ghost" onClick={() => { navigator.clipboard.writeText(cmd); setCopied(true); }}>{copied ? "Copied" : "Copy command"}</button>{" "}
+        <span className="mut">or upload an exported file:</span><br /><br />
+        <input type="file" accept=".ics,text/calendar" onChange={uploadFile("timetree")} />
+      </details>
     </>
   );
 }
