@@ -11,9 +11,11 @@ export default function Sources({ gid, me, google, onDone }: { gid: string; me: 
   const [err, setErr] = useState("");
   const base = `/api/groups/${gid}/members/${me.member_id}`;
 
-  const run = async (p: Promise<unknown>, ok = "✓ Imported.") => {
+  const [ver, setVer] = useState(0);
+  // After a calendar import, open the free/busy grid so the user can see what was read.
+  const run = async (p: Promise<unknown>, ok = "✓ Imported.", next: Tab = "paint") => {
     setErr(""); setMsg("");
-    try { await p; setMsg(ok); setTab(null); onDone(); } catch (e: any) { setErr(e.message); }
+    try { await p; setMsg(ok); setTab(next); setVer((v) => v + 1); onDone(); } catch (e: any) { setErr(e.message); }
   };
   const uploadFile = (source: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -22,7 +24,7 @@ export default function Sources({ gid, me, google, onDone }: { gid: string; me: 
     fd.append("token", me.token); fd.append("source", source); fd.append("file", f);
     run(api(`${base}/ics`, { method: "POST", body: fd }));
   };
-  const tabs: [Exclude<Tab, null>, string][] = [["apple", "Apple Calendar"], ["timetree", "TimeTree"], ["paint", "Paint busy times"], ["ics", "Other .ics"]];
+  const tabs: [Exclude<Tab, null>, string][] = [["apple", "Apple Calendar"], ["timetree", "TimeTree"], ["paint", "My free/busy"], ["ics", "Other .ics"]];
 
   return (
     <div className="card">
@@ -46,7 +48,7 @@ export default function Sources({ gid, me, google, onDone }: { gid: string; me: 
       </div>
       {tab === "apple" && <Apple base={base} token={me.token} run={run} uploadFile={uploadFile} />}
       {tab === "timetree" && <TimeTree base={base} token={me.token} run={run} uploadFile={uploadFile} />}
-      {tab === "paint" && <Paint gid={gid} me={me} run={run} />}
+      {tab === "paint" && <Paint key={ver} gid={gid} me={me} run={(p, ok) => run(p, ok, null)} />}
       {tab === "ics" && <UrlOrFile base={base} token={me.token} source="ics" run={run} uploadFile={uploadFile} />}
       {msg && <p>{msg}</p>}
       {err && <p className="err">{err}</p>}
@@ -54,7 +56,7 @@ export default function Sources({ gid, me, google, onDone }: { gid: string; me: 
   );
 }
 
-type RunFn = (p: Promise<unknown>, ok?: string) => void;
+type RunFn = (p: Promise<unknown>, ok?: string, next?: Tab) => void;
 type Upload = (s: string) => (e: React.ChangeEvent<HTMLInputElement>) => void;
 
 function UrlOrFile({ base, token, source, run, uploadFile, hint }: { base: string; token: string; source: string; run: RunFn; uploadFile: Upload; hint?: string }) {

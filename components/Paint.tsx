@@ -9,12 +9,13 @@ const hhmm = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${St
 export default function Paint({ gid, me, run }: { gid: string; me: Me; run: (p: Promise<unknown>, ok?: string) => void }) {
   const [g, setG] = useState<G | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
+  const [imp, setImp] = useState<Set<string>>(new Set());
   const mode = useRef<boolean | null>(null);
   const url = `/api/groups/${gid}/members/${me.member_id}/manual`;
 
   useEffect(() => {
-    Promise.all([api<G>(`/api/groups/${gid}`), api<{ slots: string[] }>(`${url}?token=${me.token}`)]).then(([g, m]) => {
-      setG(g); setSel(new Set(m.slots));
+    Promise.all([api<G>(`/api/groups/${gid}`), api<{ slots: string[]; imported: string[] }>(`${url}?token=${me.token}`)]).then(([g, m]) => {
+      setG(g); setSel(new Set(m.slots)); setImp(new Set(m.imported));
     });
     const up = () => (mode.current = null);
     addEventListener("mouseup", up);
@@ -32,12 +33,16 @@ export default function Paint({ gid, me, run }: { gid: string; me: Me; run: (p: 
 
   return (
     <>
-      <p className="mut">Click or drag to mark when you're <b>busy</b>. Adds to any imported calendar.</p>
+      <p className="mut">
+        Your availability: <span style={{ background: "#d9a441", padding: "0 6px", borderRadius: 3 }}>&nbsp;</span> busy from your calendar,{" "}
+        <span style={{ background: "#b3261e", padding: "0 6px", borderRadius: 3 }}>&nbsp;</span> busy (painted by you),{" "}
+        <span style={{ background: "#eee", padding: "0 6px", borderRadius: 3 }}>&nbsp;</span> free. Click or drag to mark more busy times, then Save.
+      </p>
       <div className="grid" style={{ gridTemplateColumns: `44px repeat(${days.length},minmax(34px,1fr))`, userSelect: "none" }}>
         <div />
         {days.map((x) => <div key={x.d} className="hd">{x.w}<br />{x.d.slice(5)}</div>)}
         {rows.map((r) => (
-          <FragmentRow key={r} r={r} days={days} sel={sel}
+          <FragmentRow key={r} r={r} days={days} sel={sel} imp={imp}
             down={(k) => { mode.current = !sel.has(k); apply(k); }}
             enter={(k) => { if (mode.current !== null) apply(k); }} />
         ))}
@@ -50,13 +55,13 @@ export default function Paint({ gid, me, run }: { gid: string; me: Me; run: (p: 
   );
 }
 
-function FragmentRow({ r, days, sel, down, enter }: { r: string; days: { d: string }[]; sel: Set<string>; down: (k: string) => void; enter: (k: string) => void }) {
+function FragmentRow({ r, days, sel, imp, down, enter }: { r: string; days: { d: string }[]; sel: Set<string>; imp: Set<string>; down: (k: string) => void; enter: (k: string) => void }) {
   return (
     <>
       <div className="tl">{r.endsWith(":00") ? r : ""}</div>
       {days.map((x) => {
         const k = `${x.d} ${r}`;
-        return <div key={k} className="cell" style={{ background: sel.has(k) ? "#b3261e" : "#eee" }}
+        return <div key={k} className="cell" style={{ background: sel.has(k) ? "#b3261e" : imp.has(k) ? "#d9a441" : "#eee" }}
           onMouseDown={(e) => { e.preventDefault(); down(k); }} onMouseEnter={() => enter(k)} />;
       })}
     </>
