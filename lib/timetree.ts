@@ -48,7 +48,13 @@ async function get(session: string, path: string): Promise<any> {
     headers: { ...HEADERS, Cookie: `_session_id=${session}` },
     signal: AbortSignal.timeout(20000),
   });
-  if (!res.ok) throw new HttpError(400, `TimeTree request failed (${res.status})`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    let why = "";
+    try { const j = JSON.parse(body); why = ` code=${j?.error?.code ?? ""} ${j?.error?.message ?? j?.message ?? ""}`.trimEnd(); } catch { why = " " + body.slice(0, 120); }
+    console.warn(`[timetree] GET ${path.replace(/\d{4,}/g, "N")} -> ${res.status}${why}`);
+    throw new HttpError(400, `TimeTree request failed: ${path.split("?")[0].replace(/\d{4,}/g, "N")} returned ${res.status}${why}`);
+  }
   return res.json();
 }
 
