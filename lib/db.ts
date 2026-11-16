@@ -15,9 +15,9 @@ function pool(): Pool {
     if (!url) throw new Error("DATABASE_URL is not set");
     const local = /localhost|127\.0\.0\.1/.test(url);
     globalThis.__pgPool = new Pool({
-      connectionString: url,
+      connectionString: url.replace(/sslmode=(require|prefer|verify-ca)/, "sslmode=verify-full"),
       max: 5,
-      ssl: local || /sslmode=disable/.test(url) ? undefined : { rejectUnauthorized: false },
+      ssl: local || /sslmode=/.test(url) ? undefined : true,
     });
   }
   return globalThis.__pgPool;

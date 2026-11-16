@@ -8,7 +8,10 @@ export function handle<A extends unknown[]>(fn: (...a: A) => Promise<Response>) 
     try {
       return await fn(...a);
     } catch (e: any) {
-      if (e instanceof HttpError) return json({ detail: e.message }, e.status);
+      if (e instanceof HttpError) {
+        console.warn(`[http ${e.status}] ${e.message}`);
+        return json({ detail: e.message }, e.status);
+      }
       console.error(e);
       return json({ detail: "server error" }, 500);
     }
