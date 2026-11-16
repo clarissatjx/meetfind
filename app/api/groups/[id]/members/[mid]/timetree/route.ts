@@ -14,7 +14,7 @@ export const POST = handle(async (req: Request, { params }: P) => {
   const p = await db();
   const g = await getGroup(p, id);
   await authMember(p, id, mid, String(b.token ?? ""));
-  const events = await fetchTimetreeEvents(String(b.email ?? "").trim(), String(b.password ?? ""));
+  const { events, skipped, total } = await fetchTimetreeEvents(String(b.email ?? "").trim(), String(b.password ?? ""));
   await storeBusy(p, mid, "timetree", busyFromIcs(timetreeEventsToIcs(events), groupRange(g), g.tz));
-  return json({ ok: true, events: events.length });
+  return json({ ok: true, events: events.length, skipped, total });
 });

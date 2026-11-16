@@ -58,20 +58,31 @@ async function get(session: string, path: string): Promise<any> {
   return res.json();
 }
 
-export async function fetchTimetreeEvents(email: string, password: string): Promise<TTEvent[]> {
+export async function fetchTimetreeEvents(email: string, password: string): Promise<{ events: TTEvent[]; skipped: number; total: number }> {
   const session = await login(email, password);
   const cals: { id: number }[] = (await get(session, "/calendars?since=0")).calendars ?? [];
-  const out: TTEvent[] = [];
+  const events: TTEvent[] = [];
+  let skipped = 0;
+  let lastErr: unknown;
   for (const c of cals) {
-    let since: number | null = null;
-    for (let page = 0; page < 50; page++) {
-      const r: any = await get(session, `/calendar/${c.id}/events/sync` + (since === null ? "" : `?since=${since}`));
-      out.push(...(r.events ?? []));
-      if (r.chunk !== true) break;
-      since = r.since;
+    try {
+      const got: TTEvent[] = [];
+      let since: number | null = null;
+      for (let page = 0; page < 50; page++) {
+        const r: any = await get(session, `/calendar/${c.id}/events/sync` + (since === null ? "" : `?since=${since}`));
+        got.push(...(r.events ?? []));
+        if (r.chunk !== true) break;
+        since = r.since;
+      }
+      events.push(...got);
+    } catch (e) {
+      // Some calendars (e.g. old/inactive ones) answer -425 on sync; skip them and keep the rest.
+      skipped++;
+      lastErr = e;
     }
   }
-  return out;
+  if (cals.length > 0 && skipped === cals.length) throw lastErr;
+  return { events, skipped, total: cals.length };
 }
 
 const fmtLocal = (ms: number, zone: string) => DateTime.fromMillis(ms, { zone }).toFormat("yyyyLLdd'T'HHmmss");

@@ -118,7 +118,12 @@ function TimeTree({ base, token, run, uploadFile }: { base: string; token: strin
         <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="TimeTree password" autoComplete="off" />
         <button className="fit" disabled={busy} onClick={async () => {
           setBusy(true);
-          await run(api(`${base}/timetree`, post({ token, email, password: pw })), "✓ Connected.");
+          try {
+            const r = await api<{ skipped: number; total: number }>(`${base}/timetree`, post({ token, email, password: pw }));
+            run(Promise.resolve(), `✓ Connected${r.skipped ? ` (${r.skipped} of ${r.total} TimeTree calendars couldn't be read and were skipped)` : ""}.`);
+          } catch (e) {
+            run(Promise.reject(e));
+          }
           setBusy(false);
         }}>Connect</button>
       </div>
