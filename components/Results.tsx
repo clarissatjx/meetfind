@@ -12,12 +12,11 @@ type Data = {
 export default function Results({ gid, meId, ver }: { gid: string; meId?: string; ver: number }) {
   const [d, setD] = useState<Data | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  const [minMin, setMinMin] = useState(60);
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
 
   useEffect(() => {
-    api<Data>(`/api/groups/${gid}/availability?min_minutes=${minMin}&exclude=${[...excluded].join(",")}`).then(setD).catch(() => {});
-  }, [gid, ver, minMin, excluded]);
+    api<Data>(`/api/groups/${gid}/availability?exclude=${[...excluded].join(",")}`).then(setD).catch(() => {});
+  }, [gid, ver, excluded]);
 
   if (!d) return null;
   const name = Object.fromEntries(d.members.map((m) => [m.id, m.name]));
@@ -37,25 +36,6 @@ export default function Results({ gid, meId, ver }: { gid: string; meId?: string
             </span>
           ))}
         </div>
-      </div>
-
-      <div className="card">
-        <div className="row" style={{ alignItems: "end" }}>
-          <h2 style={{ flex: 2, margin: 0 }}>Everyone free</h2>
-          <div>
-            <label>Min duration</label>
-            <select value={minMin} onChange={(e) => setMinMin(+e.target.value)}>
-              {[30, 60, 90, 120, 180, 240].map((m) => <option key={m} value={m}>{m} min</option>)}
-            </select>
-          </div>
-        </div>
-        {d.windows.length ? d.windows.map((w, i) => (
-          <div key={i} className="win">
-            <span>{w.dow} {w.date} · <b>{w.start}–{w.end}</b></span><span className="mut">{w.minutes} min</span>
-          </div>
-        )) : (
-          <p className="mut">{d.active ? "No window where everyone is free for that long. Try a shorter duration or exclude someone." : "Waiting for calendars…"}</p>
-        )}
       </div>
 
       <div className="card">
