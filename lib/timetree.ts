@@ -58,9 +58,26 @@ async function get(session: string, path: string): Promise<any> {
   return res.json();
 }
 
-export async function fetchTimetreeEvents(email: string, password: string): Promise<{ events: TTEvent[]; skipped: number; total: number }> {
+export type TTCalendar = { id: number; name: string };
+
+async function listCalendars(session: string): Promise<TTCalendar[]> {
+  const cals: any[] = (await get(session, "/calendars?since=0")).calendars ?? [];
+  return cals.map((c) => ({ id: c.id, name: String(c.name || "").trim() || "(unnamed calendar)" }));
+}
+
+export async function listTimetreeCalendars(email: string, password: string): Promise<TTCalendar[]> {
+  return listCalendars(await login(email, password));
+}
+
+/** Events from the chosen calendars (all if `ids` is empty/undefined). Calendars that fail to sync are skipped. */
+export async function fetchTimetreeEvents(
+  email: string,
+  password: string,
+  ids?: number[],
+): Promise<{ events: TTEvent[]; skipped: number; total: number }> {
   const session = await login(email, password);
-  const cals: { id: number }[] = (await get(session, "/calendars?since=0")).calendars ?? [];
+  let cals = await listCalendars(session);
+  if (ids && ids.length) cals = cals.filter((c) => ids.includes(c.id));
   const events: TTEvent[] = [];
   let skipped = 0;
   let lastErr: unknown;

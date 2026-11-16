@@ -15,7 +15,7 @@ export const POST = handle(async (req: Request, { params }: P) => {
   const g = await getGroup(p, id);
   await authMember(p, id, mid, String(b.token ?? ""));
   const range = groupRange(g);
-  const events = await fetchIcloudEvents(String(b.email ?? "").trim(), String(b.app_password ?? "").trim(), range);
+  const events = await fetchIcloudEvents(String(b.email ?? "").trim(), String(b.app_password ?? "").trim(), range, Array.isArray(b.calendar_urls) ? b.calendar_urls.map(String) : undefined);
   await storeBusy(p, mid, "apple", busyFromVevents(events, range, g.tz));
   return json({ ok: true });
 });
